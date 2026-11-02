@@ -1,0 +1,14 @@
+name = "brainlessdiscordbot"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Public HTTPS address of the Core stats API (through Cloudflare), no trailing slash.
+API_URL = "https://api.example.com"
+COMMAND_PREFIX = "pb"
+# Optional: your Discord server ID, so the commands only answer there.
+GUILD_ID = ""
+
+# Secrets — set with `npx wrangler secret put <NAME>`, never put them in this file:
+#   DISCORD_PUBLIC_KEY  (Discord Developer Portal → your app → General Information → Public Key)
+#   API_SECRET          (same value as stats_api.shared_secret in the Core config)
