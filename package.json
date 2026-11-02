@@ -1,0 +1,13 @@
+{
+  "name": "brainlessdiscordbot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Project Brainless Discord stats bot (Cloudflare Worker) for the Core stats API.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "register": "node scripts/register-commands.mjs",
+    "deploy": "npx wrangler@4 deploy"
+  },
+  "engines": { "node": ">=20" }
+}
