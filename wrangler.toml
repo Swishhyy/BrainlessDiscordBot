@@ -1,14 +1,22 @@
 name = "brainlessdiscordbot"
 main = "src/worker.js"
 compatibility_date = "2025-09-01"
+# Keep variables you add in the Cloudflare dashboard (e.g. GUILD_ID) across deploys.
+keep_vars = true
+
+# Re-check the slash command registration once an hour (needs the DISCORD_TOKEN secret).
+[triggers]
+crons = ["23 * * * *"]
 
 [vars]
 # Public HTTPS address of the Core stats API (through Cloudflare), no trailing slash.
 API_URL = "https://api.projectbrainless.com"
 COMMAND_PREFIX = "pb"
-# Optional: your Discord server ID, so the commands only answer there.
-GUILD_ID = ""
+# Optional GUILD_ID (your Discord server ID): add it in the Cloudflare dashboard under
+# Settings → Variables and Secrets (type Text). With it, commands register instantly and
+# only answer in your server; without it they register globally.
 
 # Secrets — set with `npx wrangler secret put <NAME>`, never put them in this file:
 #   DISCORD_PUBLIC_KEY  (Discord Developer Portal → your app → General Information → Public Key)
 #   API_SECRET          (same value as stats_api.shared_secret in the Core config)
+#   DISCORD_TOKEN       (optional: bot token; lets the Worker register the slash commands itself)
