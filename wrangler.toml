@@ -21,8 +21,18 @@ new_sqlite_classes = ["Gateway"]
 # Public HTTPS address of the Core stats API (through Cloudflare), no trailing slash.
 API_URL = "https://api.projectbrainless.com"
 COMMAND_PREFIX = "pb"
+SERVER_NAME = "Project Brainless"
+SERVER_ADDRESS = "sl.projectbrainless.com:9025"
+# Population alerts: an embed in this channel, pinging this role, when the server
+# reaches ALERT_THRESHOLD players and again at ALERT_HIGH_THRESHOLD ("close to max").
+ALERT_CHANNEL_ID = "1567064512010518528"
+ALERT_ROLE_ID = "1567063348544016424"
+ALERT_THRESHOLD = "8"
+ALERT_HIGH_THRESHOLD = "18"
+# Optional: ALERT_REARM_GAP (3) players below a threshold before it can alert again,
+# ALERT_COOLDOWN_MINUTES (45) minimum time between two alerts of the same kind.
 # Optional text variables you can add in the Cloudflare dashboard to change the bot's status:
-#   PRESENCE_TEXT    what shows under the bot's name (default "Project Brainless · /pb-stats")
+#   PRESENCE_TEXT    fixed text under the bot's name instead of the live "Watching Project Brainless · 8/25"
 #   PRESENCE_TYPE    custom (default), playing, watching, listening or competing
 #   PRESENCE_STATUS  online (default), idle or dnd
 # Optional GUILD_ID (your Discord server ID): add it in the Cloudflare dashboard under

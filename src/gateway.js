@@ -6,6 +6,8 @@
 // every 30 seconds sends heartbeats if needed and reconnects if it dropped
 // (for example after a redeploy).
 
+import { alertConfig, alertMessage, decideAlert, emptyAlertState, populationPresence } from './population.js';
+
 const GATEWAY_URL = 'https://gateway.discord.gg/?v=10&encoding=json';
 const WATCHDOG_MS = 30_000;
 const TICK_MS = 5_000;
@@ -88,6 +90,12 @@ export class GatewaySession {
     }
   }
 
+  // Change the bot's status without reconnecting (gateway op 3).
+  updatePresence(presence) {
+    this.presence = presence;
+    if (this.ready) this.send({ op: 3, d: presence });
+  }
+
   heartbeat() {
     this.send({ op: 1, d: this.seq });
     this.lastHeartbeat = this.now();
@@ -145,22 +153,84 @@ export class Gateway {
     this.lastError = null;
     this.connectedAt = null;
     this.connecting = false;
+    this.population = null;
+    this.presenceKey = null;
+    this.nextPoll = 0;
+    this.alertBackoffUntil = 0;
+    this.alertProblem = null;
+  }
+
+  // PRESENCE_TEXT overrides the live population status.
+  currentPresence() {
+    return this.env.PRESENCE_TEXT ? presencePayload(this.env) : populationPresence(this.population, this.env);
+  }
+
+  // Every ~30 seconds: read the server population, update the bot's status when it
+  // changes, and post a role-ping embed when an alert threshold is reached.
+  async pollPopulation() {
+    if (!this.env.API_URL || Date.now() < this.nextPoll) return;
+    this.nextPoll = Date.now() + 25_000;
+    let status;
+    try {
+      const response = await fetch(this.env.API_URL.replace(/\/+$/, '') + '/api/v1/status', { headers: { Accept: 'application/json' } });
+      status = response.ok ? await response.json() : { online: false };
+    } catch {
+      status = { online: false };
+    }
+    this.population = status;
+
+    const presence = this.currentPresence();
+    const key = JSON.stringify(presence.activities);
+    if (this.session?.ready && key !== this.presenceKey) {
+      this.session.updatePresence(presence);
+      this.presenceKey = key;
+    }
+
+    const cfg = alertConfig(this.env);
+    if (!status.online || !this.env.DISCORD_TOKEN || !cfg.channel || Date.now() < this.alertBackoffUntil) return;
+    const saved = (await this.state.storage.get('alerts')) ?? emptyAlertState();
+    const { alert, state } = decideAlert(saved, Number(status.players) || 0, Date.now(), cfg);
+    if (alert) {
+      const response = await fetch(`https://discord.com/api/v10/channels/${cfg.channel}/messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bot ${this.env.DISCORD_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(alertMessage(alert, status.players, status.maxPlayers, cfg)),
+      }).catch((error) => ({ ok: false, status: error.message }));
+      if (!response.ok) {
+        // Keep the alert pending and retry in 5 minutes (e.g. missing channel permission).
+        this.alertProblem = `posting the alert failed (${response.status}); check the bot can send messages and embeds in the alert channel`;
+        this.alertBackoffUntil = Date.now() + 5 * 60_000;
+        return;
+      }
+      this.alertProblem = null;
+    }
+    await this.state.storage.put('alerts', state);
   }
 
   async fetch(request) {
     await this.ensure();
+    await this.pollPopulation().catch(() => {});
     return new Response(JSON.stringify(this.status()), { headers: { 'Content-Type': 'application/json' } });
   }
 
   async alarm() {
     await this.ensure();
+    await this.pollPopulation().catch(() => {});
   }
 
   status() {
     if (!this.env.DISCORD_TOKEN) return { online: false, message: 'Online status: off (DISCORD_TOKEN secret is not set).' };
-    if (this.session?.ready && !this.session.closed) return { online: true, message: 'Online status: connected to Discord, the bot shows as online.' };
+    if (this.session?.ready && !this.session.closed) return { online: true, message: 'Online status: connected to Discord, the bot shows as online.' + this.populationLine() };
     if (this.session && !this.session.closed) return { online: false, message: 'Online status: connecting to Discord…' };
     return { online: false, message: `Online status: reconnecting${this.lastError ? ` (last problem: ${this.lastError})` : ''}.` };
+  }
+
+  populationLine() {
+    const pop = this.population;
+    const cfg = alertConfig(this.env);
+    const count = !pop ? 'not checked yet' : pop.online ? `${pop.players}/${pop.maxPlayers}` : 'game server offline';
+    const alerts = !cfg.channel ? 'off (set ALERT_CHANNEL_ID)' : `on at ${cfg.low} and ${cfg.high} players${cfg.role ? ', pinging the role' : ''}`;
+    return `\nPopulation: ${count}. Alerts: ${alerts}.${this.alertProblem ? ` Problem: ${this.alertProblem}.` : ''}`;
   }
 
   async ensure() {
@@ -185,7 +255,9 @@ export class Gateway {
     this.connecting = true;
     try {
       const socket = await openSocket();
-      this.session = new GatewaySession({ token: this.env.DISCORD_TOKEN, presence: presencePayload(this.env), socket });
+      const presence = this.currentPresence();
+      this.session = new GatewaySession({ token: this.env.DISCORD_TOKEN, presence, socket });
+      this.presenceKey = JSON.stringify(presence.activities);
       this.connectedAt = Date.now();
       this.backoff = 5_000;
       this.nextAttempt = 0;

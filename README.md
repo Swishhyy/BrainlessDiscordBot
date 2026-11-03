@@ -36,11 +36,22 @@ The stats API has to be running behind Cloudflare first: follow steps A and B of
 
 Replies are private (only the person who ran the command sees them), and mentions are disabled. If the game server is offline, commands answer "Stats are unavailable right now" instead of failing.
 
+### Population status and alerts
+
+Every 30 seconds the bot reads `GET /api/v1/status` from the Core API (Core 0.3.1 or later) and:
+
+- shows **Watching Project Brainless · 8/25** as its status (or `· offline`);
+- posts an embed in `ALERT_CHANNEL_ID` and pings `ALERT_ROLE_ID` when the server reaches `ALERT_THRESHOLD` players (default 8, "Server is filling up!"), and again at `ALERT_HIGH_THRESHOLD` (default 18, "close to max pop, hurry up and join").
+
+Each alert fires once per climb. It can fire again only after the count drops `ALERT_REARM_GAP` (3) players below the threshold, and no sooner than `ALERT_COOLDOWN_MINUTES` (45) after the last one. A jump straight past both thresholds sends only the high alert. Alert state is stored in the Durable Object, so redeploys don't resend.
+
+The channel, role, thresholds and join address are in [`wrangler.toml`](wrangler.toml). The bot needs **View Channel**, **Send Messages** and **Embed Links** in the alert channel. To ping the role, either make the role mentionable or give the bot **Mention @everyone, @here and All Roles**. Problems show on the Worker's status page.
+
 ### Online status
 
 Slash commands work over HTTP, which doesn't make a bot show as online. To show online, one Durable Object (`Gateway` in [`src/gateway.js`](src/gateway.js)) holds a Discord gateway connection with the `DISCORD_TOKEN`. It sends heartbeats, and an alarm every 30 seconds reconnects it if it dropped, for example after a redeploy. It fits within Cloudflare's free limits for one small Durable Object. It can blink offline for a few seconds while reconnecting; commands keep working either way.
 
-Change what shows under the bot's name with optional **Text** variables in the dashboard:
+By default the status shows the live population (above). To show fixed text instead, add these optional **Text** variables in the dashboard:
 
 | Name | Default | Options |
 | --- | --- | --- |
