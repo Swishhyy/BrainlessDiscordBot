@@ -12,47 +12,59 @@ The stats API has to be running behind Cloudflare first: follow steps A and B of
 
 ## Set up
 
-1. **Discord Developer Portal** → [Applications](https://discord.com/developers/applications) → *New Application*. If you already used the old built-in bot, reuse that application.
-   - *General Information*: copy the **Application ID** and **Public Key**.
-   - *Bot*: *Reset Token* and copy it. You only need it once, for step 5. Don't put it anywhere else.
-   - *Installation* (or *OAuth2 → URL Generator*): scope `applications.commands` (add `bot` if you want it listed as a member) → open the link → add it to your server.
-2. **Edit `wrangler.toml`:** set `API_URL` to `https://api.yourdomain.com`, and `GUILD_ID` to your Discord server ID (right-click the server with Developer Mode on → *Copy Server ID*). Keep `COMMAND_PREFIX` the same as `discord_command_prefix` in the plugin.
-3. **Deploy** from this repo (clone it, then run these in its folder):
-   ```bash
-   npx wrangler@4 login
-   ```
-   ```bash
-   npx wrangler@4 secret put DISCORD_PUBLIC_KEY
-   ```
-   ```bash
-   npx wrangler@4 secret put API_SECRET
-   ```
-   ```bash
-   npm run deploy
-   ```
-   Paste the Public Key and the `shared_secret` from the Stats API guide when asked. The deploy prints a URL like `https://brainlessdiscordbot.<you>.workers.dev`.
-4. **Developer Portal → General Information → Interactions Endpoint URL:** paste that Worker URL and *Save Changes*. Discord tests it straight away; it only saves if the Public Key is right.
-5. **Register the slash commands** (once, and again only if you change the prefix):
-   ```bash
-   DISCORD_TOKEN=xxx DISCORD_APPLICATION_ID=123 DISCORD_GUILD_ID=456 npm run register
-   ```
-   On Windows PowerShell:
-   ```powershell
-   $env:DISCORD_TOKEN="xxx"; $env:DISCORD_APPLICATION_ID="123"; $env:DISCORD_GUILD_ID="456"; npm run register
-   ```
+1. **Discord Developer Portal** → [Applications](https://discord.com/developers/applications) → *New Application*.
+   - *General Information*: copy the **Public Key**.
+   - *Bot*: *Reset Token* and copy the **Bot Token**.
+   - *Installation*: scope `applications.commands` (add `bot` if you want it listed as a member) → open the install link → add it to your server.
+   - With Developer Mode on in Discord, right-click your server → *Copy Server ID*.
+2. **Deploy the Worker:** Cloudflare dashboard → **Workers & Pages → Create → Import a repository** → this repo.
+   - Build command: *(empty)* · Deploy command: `npx wrangler deploy` · Root directory: `/`
+   - `API_URL` in [`wrangler.toml`](wrangler.toml) must be your API address. Every push to `main` redeploys.
+3. **Add variables:** open the Worker → **Settings → Variables and Secrets** → *Add*:
+
+   | Name | Type | Value |
+   | --- | --- | --- |
+   | `DISCORD_PUBLIC_KEY` | Secret | the Public Key |
+   | `API_SECRET` | Secret | the same value as `stats_api.shared_secret` in the Core config |
+   | `DISCORD_TOKEN` | Secret | the Bot Token (lets the Worker register its slash commands) |
+   | `GUILD_ID` | Text | your server ID (commands appear instantly and only answer there) |
+
+   These stay set between deploys (`keep_vars = true`).
+4. **Open the Worker URL** (e.g. `https://brainlessdiscordbot.<you>.workers.dev`). It should say *Project Brainless Discord bot is running* and *Registered /pb-stats, …*. The Worker also re-checks the commands every hour, and only re-registers them if something changed.
+5. **Developer Portal → General Information → Interactions Endpoint URL:** paste the Worker URL → *Save Changes*. Discord tests it immediately; it only saves if `DISCORD_PUBLIC_KEY` is right.
 6. **Test:** in game, F1 `.pblink` → in Discord `/pb-link code:XXXXXXXX` → `/pb-stats`, `/pb-top`.
 
 Replies are private (only the person who ran the command sees them), and mentions are disabled. If the game server is offline, commands answer "Stats are unavailable right now" instead of failing.
 
-### Deploying from GitHub instead of your PC
+### Without storing the bot token in Cloudflare
 
-Optional: in the Cloudflare dashboard (**Workers & Pages → Create → Import a repository**) connect this repo with:
+Leave `DISCORD_TOKEN` out and register the commands once from your PC instead (Node.js 20+, from a copy of this repo):
 
-- **Build command:** none
-- **Deploy command:** `npx wrangler deploy`
-- **Root directory:** `/`
+```bash
+DISCORD_TOKEN=xxx DISCORD_APPLICATION_ID=123 DISCORD_GUILD_ID=456 npm run register
+```
 
-Every push to `main` then redeploys. The Worker name must match `name` in `wrangler.toml` (`brainlessdiscordbot`). The secrets from step 3 stay set between deploys. The `[vars]` in `wrangler.toml` are applied on every deploy, so change `API_URL`/`GUILD_ID` there rather than in the dashboard.
+```powershell
+$env:DISCORD_TOKEN="xxx"; $env:DISCORD_APPLICATION_ID="123"; $env:DISCORD_GUILD_ID="456"; npm run register
+```
+
+### Deploying from your PC instead of GitHub
+
+```bash
+npx wrangler@4 login
+```
+
+```bash
+npx wrangler@4 secret put DISCORD_PUBLIC_KEY
+```
+
+```bash
+npx wrangler@4 secret put API_SECRET
+```
+
+```bash
+npm run deploy
+```
 
 ## How it talks to the API
 

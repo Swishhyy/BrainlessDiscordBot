@@ -2,6 +2,7 @@
 // Discord sends each slash command here (Interactions Endpoint URL); the Worker
 // answers by calling the game server's stats API. Nothing runs between commands.
 import { callApi, fromHex } from './api.js';
+import { syncCommands } from './register.js';
 
 const EPHEMERAL = 64;
 const encoder = new TextEncoder();
@@ -93,7 +94,11 @@ async function followUp(interaction, env) {
 
 export default {
   async fetch(request, env, ctx) {
-    if (request.method !== 'POST') return new Response('Project Brainless Discord bot is running.');
+    if (request.method !== 'POST') {
+      // Visiting the Worker URL also registers/updates the slash commands when DISCORD_TOKEN is set.
+      const sync = new URL(request.url).pathname === '/' ? await syncCommands(env) : null;
+      return new Response(`Project Brainless Discord bot is running.${sync ? '\n' + sync.message : ''}\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }
     const signature = request.headers.get('X-Signature-Ed25519');
     const timestamp = request.headers.get('X-Signature-Timestamp');
     const body = await request.text();
@@ -107,5 +112,10 @@ export default {
     // Acknowledge within Discord's 3-second limit, then answer once the game server replies.
     ctx.waitUntil(followUp(interaction, env));
     return json({ type: 5, data: { flags: EPHEMERAL } });
+  },
+
+  // Hourly check that the slash commands are still registered (see wrangler.toml [triggers]).
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(syncCommands(env, { force: true }).then((r) => console.log(r.message)));
   },
 };
