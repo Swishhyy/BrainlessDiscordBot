@@ -8,13 +8,38 @@ const EPHEMERAL = 64;
 const encoder = new TextEncoder();
 const OFFLINE = "Stats are unavailable right now (the game server may be offline or restarting). Try again in a minute.";
 
+// Cloudflare accepts the standard "Ed25519" name; older runtimes only know "NODE-ED25519".
+const ED25519 = [{ name: 'Ed25519' }, { name: 'NODE-ED25519', namedCurve: 'NODE-ED25519' }];
+
+export function cleanKey(publicKeyHex) {
+  return String(publicKeyHex ?? '').replace(/\s+/g, '').toLowerCase();
+}
+
+export function keyProblem(publicKeyHex) {
+  const key = cleanKey(publicKeyHex);
+  if (!key) return 'DISCORD_PUBLIC_KEY secret is not set.';
+  if (!/^[0-9a-f]{64}$/.test(key)) return `DISCORD_PUBLIC_KEY looks wrong: expected 64 hex characters, got ${key.length}. Copy the Public Key (not the Application ID or token).`;
+  return null;
+}
+
 export async function verifyDiscord(publicKeyHex, signatureHex, timestamp, body) {
+  if (keyProblem(publicKeyHex)) return false;
+  let signature;
   try {
-    const key = await crypto.subtle.importKey('raw', fromHex(publicKeyHex), { name: 'Ed25519' }, false, ['verify']);
-    return await crypto.subtle.verify({ name: 'Ed25519' }, key, fromHex(signatureHex), encoder.encode(timestamp + body));
+    signature = fromHex(String(signatureHex ?? '').trim());
   } catch {
     return false;
   }
+  for (const algorithm of ED25519) {
+    try {
+      const key = await crypto.subtle.importKey('raw', fromHex(cleanKey(publicKeyHex)), algorithm, false, ['verify']);
+      return await crypto.subtle.verify(algorithm, key, signature, encoder.encode(timestamp + body));
+    } catch {
+      // try the next algorithm name
+    }
+  }
+  console.log('Ed25519 is not available in this runtime');
+  return false;
 }
 
 function json(value, status = 200) {
@@ -96,14 +121,23 @@ export default {
   async fetch(request, env, ctx) {
     if (request.method !== 'POST') {
       // Visiting the Worker URL also registers/updates the slash commands when DISCORD_TOKEN is set.
-      const sync = new URL(request.url).pathname === '/' ? await syncCommands(env) : null;
-      return new Response(`Project Brainless Discord bot is running.${sync ? '\n' + sync.message : ''}\n`, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      const home = new URL(request.url).pathname === '/';
+      const lines = ['Project Brainless Discord bot is running.'];
+      if (home) {
+        lines.push(keyProblem(env.DISCORD_PUBLIC_KEY) ?? 'DISCORD_PUBLIC_KEY looks valid.');
+        lines.push(env.API_SECRET && env.API_SECRET.length >= 32 ? 'API_SECRET is set.' : 'API_SECRET is missing or shorter than 32 characters.');
+        lines.push((await syncCommands(env)).message);
+      }
+      return new Response(lines.join('\n') + '\n', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
     const signature = request.headers.get('X-Signature-Ed25519');
     const timestamp = request.headers.get('X-Signature-Timestamp');
     const body = await request.text();
-    if (!signature || !timestamp || !(await verifyDiscord(env.DISCORD_PUBLIC_KEY, signature, timestamp, body)))
+    if (!signature || !timestamp || !(await verifyDiscord(env.DISCORD_PUBLIC_KEY, signature, timestamp, body))) {
+      const problem = keyProblem(env.DISCORD_PUBLIC_KEY);
+      if (problem) console.log(problem);
       return new Response('Invalid request signature', { status: 401 });
+    }
     const interaction = JSON.parse(body);
     if (interaction.type === 1) return json({ type: 1 });
     if (interaction.type !== 2) return json({ type: 4, data: { content: 'Unsupported interaction.', flags: EPHEMERAL } });
