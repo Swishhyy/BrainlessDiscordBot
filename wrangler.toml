@@ -4,7 +4,7 @@ compatibility_date = "2025-09-01"
 
 [vars]
 # Public HTTPS address of the Core stats API (through Cloudflare), no trailing slash.
-API_URL = "https://api.example.com"
+API_URL = "https://api.projectbrainless.com"
 COMMAND_PREFIX = "pb"
 # Optional: your Discord server ID, so the commands only answer there.
 GUILD_ID = ""
