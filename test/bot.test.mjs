@@ -104,3 +104,23 @@ test('commands are acknowledged first and answered in a follow-up', async () => 
   const followUp = calls.find((c) => c.method === 'PATCH');
   assert.equal(followUp.path, '/api/v10/webhooks/999/tok/messages/@original');
 });
+
+test('a public key pasted with spaces or capitals still verifies, and bad keys are explained', async () => {
+  const { keyProblem } = await import('../src/worker.js');
+  const { publicKey, signBody } = await discordKeys();
+  const body = '{"type":1}';
+  const signature = await signBody('9', body);
+  const messy = ` ${publicKey.toUpperCase().slice(0, 30)} ${publicKey.toUpperCase().slice(30)}\n`;
+  assert.equal(await verifyDiscord(messy, signature, '9', body), true);
+  assert.equal(keyProblem(messy), null);
+  assert.match(keyProblem(''), /not set/);
+  assert.match(keyProblem('1234567890'), /64 hex characters, got 10/);
+});
+
+test('the status page reports missing secrets', async () => {
+  globalThis.fetch = async () => new Response('[]');
+  const text = await (await worker.fetch(new Request('https://bot/'), {}, { waitUntil() {} })).text();
+  assert.match(text, /DISCORD_PUBLIC_KEY secret is not set/);
+  assert.match(text, /API_SECRET is missing/);
+  assert.match(text, /DISCORD_TOKEN secret is not set/);
+});
