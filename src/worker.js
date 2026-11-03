@@ -3,6 +3,9 @@
 // answers by calling the game server's stats API. Nothing runs between commands.
 import { callApi, fromHex } from './api.js';
 import { syncCommands } from './register.js';
+import { presenceStatus } from './gateway.js';
+
+export { Gateway } from './gateway.js';
 
 const EPHEMERAL = 64;
 const encoder = new TextEncoder();
@@ -127,6 +130,7 @@ export default {
         lines.push(keyProblem(env.DISCORD_PUBLIC_KEY) ?? 'DISCORD_PUBLIC_KEY looks valid.');
         lines.push(env.API_SECRET && env.API_SECRET.length >= 32 ? 'API_SECRET is set.' : 'API_SECRET is missing or shorter than 32 characters.');
         lines.push((await syncCommands(env)).message);
+        lines.push((await presenceStatus(env)).message);
       }
       return new Response(lines.join('\n') + '\n', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
@@ -145,11 +149,13 @@ export default {
       return json({ type: 4, data: { content: 'This bot only works in the Project Brainless Discord server.', flags: EPHEMERAL } });
     // Acknowledge within Discord's 3-second limit, then answer once the game server replies.
     ctx.waitUntil(followUp(interaction, env));
+    ctx.waitUntil(presenceStatus(env));
     return json({ type: 5, data: { flags: EPHEMERAL } });
   },
 
-  // Hourly check that the slash commands are still registered (see wrangler.toml [triggers]).
+  // Hourly check that the slash commands are still registered and the bot is online (see wrangler.toml [triggers]).
   async scheduled(event, env, ctx) {
     ctx.waitUntil(syncCommands(env, { force: true }).then((r) => console.log(r.message)));
+    ctx.waitUntil(presenceStatus(env).then((r) => console.log(r.message)));
   },
 };
